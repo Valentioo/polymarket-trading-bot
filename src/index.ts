@@ -9,7 +9,6 @@ import { RealTimeDataClient } from "@polymarket/real-time-data-client";
 import { OrderType } from "@polymarket/clob-client";
 import type { TradePayload } from "./utils/types";
 import { autoRedeemResolvedMarkets } from "./utils/redeem";
-import { hasArbOpportunity } from "./arbitrage";
 
 async function main() {
     logger.info("Starting the bot...");
@@ -28,7 +27,6 @@ async function main() {
     const tickSize = (process.env.TICK_SIZE as "0.1" | "0.01" | "0.001" | "0.0001") || "0.01";
     const negRisk = process.env.NEG_RISK === "true";
     const enableCopyTrading = process.env.ENABLE_COPY_TRADING !== "false"; // Default to true
-    const requireArbSignal = process.env.REQUIRE_ARB_SIGNAL === "true"; // Only copy when YES+NO < $1 arb exists
 
     // Auto-redemption configuration
     const redeemDurationMinutes = process.env.REDEEM_DURATION ? parseInt(process.env.REDEEM_DURATION, 10) : null;
@@ -42,7 +40,6 @@ async function main() {
     logger.info(`  Tick Size: ${tickSize}`);
     logger.info(`  Neg Risk: ${negRisk}`);
     logger.info(`  Copy Trading: ${enableCopyTrading ? "enabled" : "disabled"}`);
-    logger.info(`  Require arb signal: ${requireArbSignal ? "yes (copy only when YES+NO arb)" : "no"}`);
 
     // Create credentials if they don't exist
     const credential = await createCredential();
@@ -120,15 +117,6 @@ async function main() {
             // Copy the trade if order builder is available and copy trading is not paused
             if (orderBuilder && enableCopyTrading && !isCopyTradingPaused) {
                 try {
-                    if (requireArbSignal && clobClient) {
-                        const hasArb = await hasArbOpportunity(payload.conditionId, clobClient);
-                        if (!hasArb) {
-                            logger.info(
-                                `Skipping copy – no arbitrage signal for market ${payload.conditionId.slice(0, 18)}... (set REQUIRE_ARB_SIGNAL=false to copy anyway)`
-                            );
-                            return;
-                        }
-                    }
                     logger.info(`Copying trade with ${sizeMultiplier}x multiplier...`);
                     const result = await orderBuilder.copyTrade({
                         trade: payload,

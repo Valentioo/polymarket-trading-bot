@@ -9,7 +9,7 @@ This file helps maintainers configure GitHub settings to improve search ranking 
 On the repo's main page, click the gear icon next to **About**, then paste:
 
 ```
-Polymarket trading bot — arbitrage and copy trading: copy when YES+NO arb exists, real-time mirror trading with auto-redemption.
+Polymarket copy trading bot — real-time mirror trading with configurable size and auto-redemption.
 ```
 
 ### 2. Topics
@@ -20,7 +20,6 @@ In the same **About** section, add these topics (GitHub allows up to ~20):
 - `trading-bot`
 - `prediction-markets`
 - `copy-trading`
-- `arbitrage`
 - `polymarket-bot`
 - `mirror-trading`
 - `polygon`
