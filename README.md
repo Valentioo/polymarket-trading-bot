@@ -62,6 +62,10 @@ npm start
 
 Telegram [@hodlwarden](https://t.me/hodlwarden) · Email [hodlwarden@gmail.com](mailto:hodlwarden@gmail.com)
 
+## License
+
+ISC — see [LICENSE](LICENSE). Having a license helps the repo appear in GitHub license-filtered search (e.g. `license:isc`).
+
 ---
 
 *GitHub repo setup for discoverability: see [.github/REPO_SETUP.md](.github/REPO_SETUP.md)*
