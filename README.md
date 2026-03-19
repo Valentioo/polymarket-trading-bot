@@ -4,6 +4,9 @@ A **polymarket trading bot** and polymarket copy trading bot: mirrors trades fro
 
 > *Search: polymarket trading bot · polymarket copy bot · polymarket copytrading bot*
 
+<img width="1042" height="697" alt="image" src="https://github.com/user-attachments/assets/9ec55b28-b938-4be1-824b-d065d643e069" />
+
+
 **Requirements:** Node.js 18+ · Polygon wallet with USDC
 
 ## Quick Start
