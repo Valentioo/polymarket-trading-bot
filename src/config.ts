@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import dotenv from 'dotenv';
 import { logger } from './logger.js';
 
@@ -54,6 +56,33 @@ export const config = {
     wsMarketIds: parseCsv(process.env.WS_MARKET_IDS),
   }
 };
+
+/**
+ * If `.env` is missing or `PRIVATE_KEY` is empty, logs errors and exits the process (code 1).
+ * Call from the app entrypoint before any bot logic runs.
+ */
+export function alertMissingEnvCredentials(): void {
+  const envPath = path.join(process.cwd(), '.env');
+  let abort = false;
+
+  if (!fs.existsSync(envPath)) {
+    abort = true;
+    logger.error(
+      `⚠️  No .env file at ${envPath}. Copy .env.example to .env and set PRIVATE_KEY and other required variables.`
+    );
+  }
+  if (!config.privateKey?.trim()) {
+    abort = true;
+    logger.error(
+      '⚠️  PRIVATE_KEY is missing or empty. Set it in .env (or ensure it is exported before launch).'
+    );
+  }
+
+  if (abort) {
+    logger.error('Startup aborted: fix the above and run again.');
+    process.exit(1);
+  }
+}
 
 export function validateConfig(): void {
   const required = ['targetWallet', 'privateKey'];

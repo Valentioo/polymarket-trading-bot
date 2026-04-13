@@ -89,7 +89,7 @@ export class TradeExecutor {
       throw error;
     }
 
-    await this.ensureApprovals();
+    await this.ensureApprovals(); // non-fatal: logs per-step errors, does not throw
 
     logger.info(`✅ Trader initialized`);
     logger.info(`   Market cache: Enabled (TTL: ${this.CACHE_TTL / 1000}s)`);
@@ -632,58 +632,83 @@ export class TradeExecutor {
   }
   private async ensureApprovals(): Promise<void> {
     if (this.approvalsChecked) return;
-    this.approvalsChecked = true;
 
     logger.info('🔐 Checking required token approvals (EOA mode)...');
 
-    const usdc = new ethers.Contract(config.contracts.usdc, this.ERC20_ABI, this.wallet);
-    const ctf = new ethers.Contract(config.contracts.ctf, this.CTF_ABI, this.wallet);
+    try {
+      const usdc = new ethers.Contract(config.contracts.usdc, this.ERC20_ABI, this.wallet);
+      const ctf = new ethers.Contract(config.contracts.ctf, this.CTF_ABI, this.wallet);
 
-    const maticBal = await this.provider.getBalance(this.wallet.address);
-    const maticAmount = parseFloat(ethers.utils.formatEther(maticBal));
-    if (maticAmount < 0.05) {
-      logger.warn(`   ⚠️  Low POL/MATIC for gas: ${maticAmount.toFixed(4)}`);
-    }
-
-    const decimals = await usdc.decimals();
-    const minAllowance = ethers.utils.parseUnits(config.trading.maxTradeSize.toString(), decimals);
-    const gasOverrides = await this.getGasOverrides();
-
-    const usdcSpenders = [
-      { name: 'CTF', address: config.contracts.ctf },
-      { name: 'CTF Exchange', address: config.contracts.exchange },
-      { name: 'Neg Risk CTF Exchange', address: config.contracts.negRiskExchange },
-    ];
-
-    for (const spender of usdcSpenders) {
-      const allowance = await usdc.allowance(this.wallet.address, spender.address);
-      if (allowance.lt(minAllowance)) {
-        logger.info(`   Approving USDC.e to ${spender.name} (${spender.address})...`);
-        const tx = await usdc.approve(spender.address, ethers.constants.MaxUint256, gasOverrides);
-        logger.info(`   Tx: ${tx.hash}`);
-        await tx.wait();
-        logger.info(`   ✅ USDC.e approved to ${spender.name}`);
-      } else {
-        logger.info(`   ✅ USDC.e already approved to ${spender.name}`);
+      const maticBal = await this.provider.getBalance(this.wallet.address);
+      const maticAmount = parseFloat(ethers.utils.formatEther(maticBal));
+      if (maticAmount < 0.05) {
+        logger.warn(`   ⚠️  Low POL/MATIC for gas: ${maticAmount.toFixed(4)}`);
       }
-    }
 
-    const operators = [
-      { name: 'CTF Exchange', address: config.contracts.exchange },
-      { name: 'Neg Risk CTF Exchange', address: config.contracts.negRiskExchange },
-    ];
+      const decimals = await usdc.decimals();
+      const minAllowance = ethers.utils.parseUnits(config.trading.maxTradeSize.toString(), decimals);
+      const gasOverrides = await this.getGasOverrides();
 
-    for (const operator of operators) {
-      const approved = await ctf.isApprovedForAll(this.wallet.address, operator.address);
-      if (!approved) {
-        logger.info(`   Approving CTF for ${operator.name} (${operator.address})...`);
-        const tx = await ctf.setApprovalForAll(operator.address, true, gasOverrides);
-        logger.info(`   Tx: ${tx.hash}`);
-        await tx.wait();
-        logger.info(`   ✅ CTF approved for ${operator.name}`);
-      } else {
-        logger.info(`   ✅ CTF already approved for ${operator.name}`);
+      let anyApprovalStepFailed = false;
+
+      const usdcSpenders = [
+        { name: 'CTF', address: config.contracts.ctf },
+        { name: 'CTF Exchange', address: config.contracts.exchange },
+        { name: 'Neg Risk CTF Exchange', address: config.contracts.negRiskExchange },
+      ];
+
+      for (const spender of usdcSpenders) {
+        try {
+          const allowance = await usdc.allowance(this.wallet.address, spender.address);
+          if (allowance.lt(minAllowance)) {
+            logger.info(`   Approving USDC.e to ${spender.name} (${spender.address})...`);
+            const tx = await usdc.approve(spender.address, ethers.constants.MaxUint256, gasOverrides);
+            logger.info(`   Tx: ${tx.hash}`);
+            await tx.wait();
+            logger.info(`   ✅ USDC.e approved to ${spender.name}`);
+          } else {
+            logger.info(`   ✅ USDC.e already approved to ${spender.name}`);
+          }
+        } catch (err: any) {
+          anyApprovalStepFailed = true;
+          logger.error(
+            `   ❌ USDC.e approval failed (${spender.name}): ${err?.message || String(err)} — continuing without this approval`
+          );
+        }
       }
+
+      const operators = [
+        { name: 'CTF Exchange', address: config.contracts.exchange },
+        { name: 'Neg Risk CTF Exchange', address: config.contracts.negRiskExchange },
+      ];
+
+      for (const operator of operators) {
+        try {
+          const approved = await ctf.isApprovedForAll(this.wallet.address, operator.address);
+          if (!approved) {
+            logger.info(`   Approving CTF for ${operator.name} (${operator.address})...`);
+            const tx = await ctf.setApprovalForAll(operator.address, true, gasOverrides);
+            logger.info(`   Tx: ${tx.hash}`);
+            await tx.wait();
+            logger.info(`   ✅ CTF approved for ${operator.name}`);
+          } else {
+            logger.info(`   ✅ CTF already approved for ${operator.name}`);
+          }
+        } catch (err: any) {
+          anyApprovalStepFailed = true;
+          logger.error(
+            `   ❌ CTF approval failed (${operator.name}): ${err?.message || String(err)} — continuing without this approval`
+          );
+        }
+      }
+
+      if (!anyApprovalStepFailed) {
+        this.approvalsChecked = true;
+      }
+    } catch (err: any) {
+      logger.error(
+        `🔐 Approval setup encountered an error: ${err?.message || String(err)} — bot will still start; approvals may be retried on next restart`
+      );
     }
   }
 

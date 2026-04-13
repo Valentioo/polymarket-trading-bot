@@ -1,4 +1,4 @@
-import { config, validateConfig } from './config.js';
+import { alertMissingEnvCredentials, config, validateConfig } from './config.js';
 import { TradeMonitor } from './monitor.js';
 import { WebSocketMonitor } from './websocket-monitor.js';
 import type { Trade } from './monitor.js';
@@ -129,7 +129,7 @@ class PolymarketCopyBot {
     logger.info('='.repeat(50));
 
     if (trade.side === 'SELL' && !config.trading.copySells) {
-      logger.warning('⚠️  Skipping SELL trade (COPY_SELLS=false, BUY-only mode)');
+      logger.warn('⚠️  Skipping SELL trade (COPY_SELLS=false, BUY-only mode)');
       return;
     }
 
@@ -139,7 +139,7 @@ class PolymarketCopyBot {
       const copyShares = this.executor.calculateSharesForNotional(copyNotional, trade.price);
       const position = this.positions.getPosition(trade.tokenId);
       if (!position || position.shares < copyShares) {
-        logger.warning(`⚠️  Skipping SELL trade: insufficient position (have ${position?.shares?.toFixed(4) ?? 0}, need ${copyShares.toFixed(4)} shares)`);
+        logger.warn(`⚠️  Skipping SELL trade: insufficient position (have ${position?.shares?.toFixed(4) ?? 0}, need ${copyShares.toFixed(4)} shares)`);
         return;
       }
     }
@@ -149,7 +149,7 @@ class PolymarketCopyBot {
     }
     const riskCheck = this.risk.checkTrade(trade, copyNotional);
     if (!riskCheck.allowed) {
-      logger.warning(`⚠️  Risk check blocked trade: ${riskCheck.reason}`);
+      logger.warn(`⚠️  Risk check blocked trade: ${riskCheck.reason}`);
       return;
     }
 
@@ -194,7 +194,7 @@ class PolymarketCopyBot {
       const totalNotional = this.positions.getTotalNotional();
       logger.info(`🧾 Positions loaded: ${loaded} (skipped ${skipped}), total notional ≈ ${totalNotional.toFixed(2)} USDC`);
     } catch (error: any) {
-      logger.warning(`🧾 Positions reconciliation failed: ${error.message || 'Unknown error'}`);
+      logger.warn(`🧾 Positions reconciliation failed: ${error.message || 'Unknown error'}`);
     }
   }
   
@@ -244,26 +244,39 @@ class PolymarketCopyBot {
   }
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function main() {
+  alertMissingEnvCredentials();
+
   const bot = new PolymarketCopyBot();
-  
+
   process.on('SIGINT', () => {
     logger.info('\n\nReceived SIGINT, shutting down...');
     bot.stop();
     process.exit(0);
   });
-  
+
   process.on('SIGTERM', () => {
     bot.stop();
     process.exit(0);
   });
-  
-  try {
-    await bot.initialize();
-    await bot.start();
-  } catch (error) {
-    logger.error('Fatal error:', String(error));
-    process.exit(1);
+
+  const retryMs = parseInt(process.env.INIT_RETRY_MS || '30000', 10);
+
+  for (;;) {
+    try {
+      await bot.initialize();
+      await bot.start();
+      break;
+    } catch (error) {
+      logger.error('Error during init or run:', String(error));
+      logger.error(`Process will retry in ${retryMs / 1000}s (set INIT_RETRY_MS to change).`);
+      bot.stop();
+      await delay(retryMs);
+    }
   }
 }
 
