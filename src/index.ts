@@ -1,4 +1,10 @@
-import { alertMissingEnvCredentials, config, validateConfig } from './config.js';
+import {
+  config,
+  isEnvCredentialsReady,
+  logMissingEnvCredentials,
+  refreshConfigFromEnv,
+  validateConfig,
+} from './config.js';
 import { TradeMonitor } from './monitor.js';
 import { WebSocketMonitor } from './websocket-monitor.js';
 import type { Trade } from './monitor.js';
@@ -249,24 +255,32 @@ function delay(ms: number): Promise<void> {
 }
 
 async function main() {
-  alertMissingEnvCredentials();
-
-  const bot = new PolymarketCopyBot();
+  const retryMs = parseInt(process.env.INIT_RETRY_MS || '30000', 10);
+  let bot: PolymarketCopyBot | undefined;
 
   process.on('SIGINT', () => {
     logger.info('\n\nReceived SIGINT, shutting down...');
-    bot.stop();
+    bot?.stop();
     process.exit(0);
   });
 
   process.on('SIGTERM', () => {
-    bot.stop();
+    bot?.stop();
     process.exit(0);
   });
 
-  const retryMs = parseInt(process.env.INIT_RETRY_MS || '30000', 10);
-
   for (;;) {
+    refreshConfigFromEnv();
+    if (!isEnvCredentialsReady()) {
+      logMissingEnvCredentials();
+      logger.error(
+        `Waiting for .env and PRIVATE_KEY — retry in ${retryMs / 1000}s (set INIT_RETRY_MS to change).`
+      );
+      await delay(retryMs);
+      continue;
+    }
+
+    bot = new PolymarketCopyBot();
     try {
       await bot.initialize();
       await bot.start();
@@ -275,6 +289,7 @@ async function main() {
       logger.error('Error during init or run:', String(error));
       logger.error(`Process will retry in ${retryMs / 1000}s (set INIT_RETRY_MS to change).`);
       bot.stop();
+      bot = undefined;
       await delay(retryMs);
     }
   }
